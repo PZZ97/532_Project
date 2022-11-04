@@ -1,10 +1,8 @@
-
+#include "source.h"
 //input: get_packet()
 
-typedef unsigned char HASH;
-typedef unsigend int CHUNK_idx  // index of unique chunk
-#define  HASH_SIZE 32   //bytes
-unordered_map<HASH*,CHUNK_idx> umap;
+// typedef unsigned char HASH;
+// #define  HASH_SIZE 32   //bytes
 
 uint64_t hash_func(unsigned char* input, unsigned int pos)
 {
@@ -38,9 +36,6 @@ void cdc(unsigned char* buff, unsigned int buff_size, queue<int>& chunk_index)
 
 }
 
-#define CHUNK_SIZE 64
-#define TOTAL_LEN_LEN 8
-
 int k[64] = {
 	0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
 	0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
@@ -57,7 +52,7 @@ uint32_t right_rot(uint32_t value, unsigned int count)
 	return value >> count | value << (32 - count);
 }
 
-void SHA_256(CHUNK_idx q_chunk_index, char* packet, unsigned int packet_size, HASH* hash_value)
+void SHA_256(CHUNK_idx_t q_chunk_index, char* packet, unsigned int packet_size, HASH* hash_value)
 {
 	int h[8] = { 0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19 };
 	unsigned i, j;
@@ -124,18 +119,27 @@ void SHA_256(CHUNK_idx q_chunk_index, char* packet, unsigned int packet_size, HA
 	}
 }
 
-/*
-[   ]
-*/
-bool deduplication(unsigned int chunk_index,HASH& hash_value){
-    //
-    if(umap[hash_value]==0){
-        umap[hash_value] =chunk_index;
-        //call LZW
-        return true;
+void SHA_384_HW(CHUNK_pos_t begin,CHUNK_pos_t end, char* packet, unsigned int packet_size, HASH& hash_value){
+    // https://edstem.org/us/courses/27305/discussion/2053707
+    Sha sha;
+    wc_InitSha(&sha);
+    wc_ShaUpdate(&sha, (const unsigned char*)(packet+begin), end-begin+1);  // not sure about boundary
+    wc_ShaFinal(&sha, (unsigned char*)shaSum);
+
+    for(int =0;i<SHA_DIGEST_SIZE;i++){
+        hash_value[i]=shaSum[i];
     }
-    //send chunk_index
-    return false;
+}
+CHUNK_idx_t deduplication(CHUNK_idx_t chunk_index,HASH& hash_value){
+    unordered_map<HASH,CHUNK_idx_t> umap;
+    CHUNK_idx_t idx= umap[hash_value];
+    // index ranges from 0 to MAX, but we do not store 0, 
+    // so make all idx ++ before stroe it
+    if(idx!=0)  // got value
+        return idx-1;
+
+    umap[hash_value] =chunk_index+1;
+    return -1;  
 }
 
 void LZW(int chunk_start,int chunk_end,string &s1,unsigned int packet_size,vector<unsigned char> &output_code){
@@ -172,31 +176,42 @@ void LZW(int chunk_start,int chunk_end,string &s1,unsigned int packet_size,vecto
     return output_code;
 }
 
-queue<pair<CHUNK_idx,int>> q;
+IDXQ q; // queue for  chunk index & chunk end pos
+
 int main(){
 
+    // while(get buffer from packet): 
+    // {
+        //get_packet()
+        CDC( packet,packet_size,  q);   // queue<pair<CHUNK_idx_t,int>> q;
+        std::string s_packet(reinterpret_cast<char*>(packet));
+        int start_pos= 0;
+        int prev_end_pos=0;
+        while(q.size()>0){
+            pair<CHUNK_idx_t,CHUNK_pos_t> index =q.front();
+            prev_end_pos= index.second;
+            q.pop();
+            if(start_pos!=0){
+                start_pos=prev_end_pos+1;
+            }
+            
+            // arrary<unsigned char,256bits>
+            HASH hash_value;
+            SHA_256(index.first, packet, packet_size,  hash_value);
+            
+            // return value of deduplication is unique chunk index if find index, else -1
+            CHUNK_idx_t sent =deduplication(index.first,hash_value);
+            if(sent ==-1 ){
 
-    //get_packet()
+                vector<unsigned char> output_code;
+                LZW(start_pos,index.second,s_packet,packet_size,output_code);
 
-
-    CDC( packet,packet_size,  q);   // queue<pair<CHUNK_idx,int>> q;
-    std::string s1(reinterpret_cast<char*>(packet));
-    while(q.size()>0){
-        pair<CHUNK_idx,int> index =q.front();
-        q.pop();
-        HASH hash_value[HASH_SIZE];
-        SHA_256(index.first, packet, packet_size,  hash_value);
-
-        if( deduplication(index.first,hash_value)){
-            // acquire start index and end  index
-            // LZW(int chunk_start,int chunk_end,char* packet,unsigned int packet_size,unsigned char* output,unsigned char *output_size);
-            vector<unsigned char> output_code;
-            LZW(chunk_start,chunk_end,s1,packet_size,output_code);
-            //ssend (LZW)
+                //send (output_code);
+            }
+            else{
+                //send(sent);
+            }
         }
-        else{
-            //send index.first
-        }
-    }
+    // }
 
 }
