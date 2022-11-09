@@ -1,8 +1,12 @@
-#include "source.h"
-//input: get_packet()
+#include "encode_parts.h"
+#include <unordered_map>
+#include <iostream>
+using namespace std;
 
-// typedef unsigned char HASH;
-// #define  HASH_SIZE 32   //bytes
+#define PRIME 3
+#define WIN_SIZE 16
+#define MODULUS 256
+#define TARGET 0
 
 uint64_t hash_func(unsigned char* input, unsigned int pos)
 {
@@ -19,10 +23,11 @@ uint64_t hash_func2(unsigned char* input, unsigned int pos, uint64_t hash_res)
 	return hash_res * PRIME - int(input[pos-1]) * pow(PRIME, WIN_SIZE + 1) + int(input[pos-1 + WIN_SIZE]) * PRIME;;
 }
 
-void cdc(unsigned char* buff, unsigned int buff_size, queue<int>& chunk_index)
+void cdc(unsigned char* buff, unsigned int buff_size, IDXQ& chunk_q)
 {
+    CHUNK_idx_t chunk_index=0; 
 	uint64_t hash = 0;
-	for (unsigned int i = WIN_SIZE; i < buff_size - WIN_SIZE; i++) {
+	for (int i = WIN_SIZE; i < buff_size - WIN_SIZE; i++) {
 		if (i == WIN_SIZE) {
 			hash = hash_func(buff, i);
 		}
@@ -30,7 +35,7 @@ void cdc(unsigned char* buff, unsigned int buff_size, queue<int>& chunk_index)
 			hash = hash_func2(buff, i, hash);
 		}
 		if ((hash % MODULUS) == TARGET) {
-			chunk_index.push_back(i);
+			chunk_q.push({chunk_index,i});
 		}
 	}
 
@@ -175,7 +180,7 @@ void LZW(int chunk_start,int chunk_end,string &s1,unsigned int packet_size,vecto
     output_code.push_back(table[p]);
     return output_code;
 }*/
-void LZW(int chunk_start,int chunk_end,string &s1,unsigned int packet_size,unsigned char*output_code,int * outlen){
+void LZW(int chunk_start,int chunk_end,string &s1,int packet_size,unsigned char*output_code,size_t * outlen){
 
     unordered_map<string, int> table;
     // build the original table 
@@ -257,36 +262,36 @@ int main(){
 
 /* &file[offset]->output_buf */
 
-uint8_t encode(unsigned char * output_buf,const unsigend char* input_buf, int inlength, int * outlength ){
+uint8_t encode(uint8_t * output_buf, uint8_t* input_buf, int inlength, int * outlength ){
 
     *outlength =0;  // initialize output length
     IDXQ q_chunk;   // q_chunk: queue saves each chunk by identifing each chunk end position and chunk ID
 
     cdc(input_buf,inlength,q_chunk); 
-    std::string s_packet(reinterpret_cast<char*>(input));  // convert input(unsigned char) to string saving in  $s_packet$
+    std::string s_packet(reinterpret_cast<char*>(input_buf));  // convert input(unsigned char) to string saving in  $s_packet$
     int chunk_start_pos= 0;
     int chunk_end_pos=0;
     while(q_chunk.size()>0){    // pop out each chunk and manipulate each chunk in order 
             if(chunk_start_pos!=0){
                 chunk_start_pos=chunk_end_pos+1;
             }
-            pair<CHUNK_idx_t,CHUNK_pos_t> index =q_chunk.front();
-            int chunk_unique_id = index.first;
-            chunk_end_pos= index.second;
+            array<int,2> index =q_chunk.front();
+            int chunk_unique_id = index[0];
+            chunk_end_pos= index[1];
             q_chunk.pop();
             // typedef std::array<unsigned char,HASH_SIZE> HASH
             HASH hash_value;
-            SHA_384_HW(chunk_start_pos,chunk_end_pos,input_buf,inlength,hash_value);
+            SHA_384_HW(chunk_start_pos,chunk_end_pos,(char*)input_buf,inlength,hash_value);
 
             // return value of deduplication is unique chunk index if find index, else -1
             CHUNK_idx_t sent =deduplication(chunk_unique_id,hash_value);
             if(sent ==-1 ){
-                vector<unsigned char> output_code;
+                // vector<unsigned char> output_code;
                 unsigned char* output_code = (unsigned char*) malloc(sizeof(unsigned char)*(chunk_end_pos-chunk_start_pos+1));
-                int outlen;
-                LZW(start_pos,index.second,s_packet,packet_size,output_code,&outlen);
+                size_t outlen;
+                LZW(chunk_start_pos,chunk_end_pos,s_packet,inlength,output_code,&outlen);
                 //send (output_code);
-                memccpy(&output_buf[*outlength],output_code,outlen);
+                memcpy(&output_buf[*outlength],output_code,outlen);
                 *outlength+=outlen;
             }
             else{
