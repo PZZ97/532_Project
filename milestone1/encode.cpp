@@ -141,7 +141,7 @@ CHUNK_idx_t deduplication(CHUNK_idx_t chunk_index,HASH& hash_value){
     umap[hash_value] =chunk_index+1;
     return -1;  
 }
-
+/*
 void LZW(int chunk_start,int chunk_end,string &s1,unsigned int packet_size,vector<unsigned char> &output_code){
 
     unordered_map<string, int> table;
@@ -174,11 +174,48 @@ void LZW(int chunk_start,int chunk_end,string &s1,unsigned int packet_size,vecto
     // cout << p << "\t" << table[p] << endl;
     output_code.push_back(table[p]);
     return output_code;
+}*/
+void LZW(int chunk_start,int chunk_end,string &s1,unsigned int packet_size,unsigned char*output_code,int * outlen){
+
+    unordered_map<string, int> table;
+    // build the original table 
+    for (int i = 0; i <= 255; i++) {
+        string ch = "";
+        ch += char(i);
+        table[ch] = i;
+    }
+    string p = "", c = "";
+    p += s1[0];
+    int code = 256;
+    int length = chunk_end-chunk_start+1;
+    *outlen=0;
+    for (int i = 0; i <length; i++) {
+        if (i != s1.length() - 1)
+            c += s1[chunk_start+i + 1];
+        if (table.find(p + c) != table.end()) {
+            p = p + c;
+        }
+        else {
+            cout << p << "\t" << table[p] << "\t\t"
+                 << p + c << "\t" << code << endl;
+            // output_code.push_back(table[p]);
+            output_code[(*outlen)++] = table[p];
+            table[p + c] = code;
+            code++;
+            p = c;
+        }
+        c = "";
+    }
+    // cout << p << "\t" << table[p] << endl;
+    output_code[(*outlen)++]=table[p];
+    // return output_code;
 }
 
-IDXQ q; // queue for  chunk index & chunk end pos
 
+#ifdef __TESTMAIN__
+IDXQ q; // queue for  chunk index & chunk end pos
 int main(){
+
 
     // while(get buffer from packet): 
     // {
@@ -214,4 +251,47 @@ int main(){
         }
     // }
 
+}
+
+#endif
+
+/* &file[offset]->output_buf */
+
+uint8_t encode(unsigned char * output_buf,const unsigend char* input_buf, int inlength, int * outlength ){
+
+    *outlength =0;  // initialize output length
+    IDXQ q_chunk;   // q_chunk: queue saves each chunk by identifing each chunk end position and chunk ID
+
+    cdc(input_buf,inlength,q_chunk); 
+    std::string s_packet(reinterpret_cast<char*>(input));  // convert input(unsigned char) to string saving in  $s_packet$
+    int chunk_start_pos= 0;
+    int chunk_end_pos=0;
+    while(q_chunk.size()>0){    // pop out each chunk and manipulate each chunk in order 
+            if(chunk_start_pos!=0){
+                chunk_start_pos=chunk_end_pos+1;
+            }
+            pair<CHUNK_idx_t,CHUNK_pos_t> index =q_chunk.front();
+            int chunk_unique_id = index.first;
+            chunk_end_pos= index.second;
+            q_chunk.pop();
+            // typedef std::array<unsigned char,HASH_SIZE> HASH
+            HASH hash_value;
+            SHA_384_HW(chunk_start_pos,chunk_end_pos,input_buf,inlength,hash_value);
+
+            // return value of deduplication is unique chunk index if find index, else -1
+            CHUNK_idx_t sent =deduplication(chunk_unique_id,hash_value);
+            if(sent ==-1 ){
+                vector<unsigned char> output_code;
+                unsigned char* output_code = (unsigned char*) malloc(sizeof(unsigned char)*(chunk_end_pos-chunk_start_pos+1));
+                int outlen;
+                LZW(start_pos,index.second,s_packet,packet_size,output_code,&outlen);
+                //send (output_code);
+                memccpy(&output_buf[*outlength],output_code,outlen);
+                *outlength+=outlen;
+            }
+            else{
+                //send(sent);
+                output_buf[(*outlength)++]=(unsigned char)sent;
+            }
+        }
 }

@@ -9,7 +9,7 @@
 #include <wolfssl/wolfcrypt/sha.h>
 typedef unsigend int CHUNK_idx_t;  // index of unique chunk
 typedef unsigned int CHUNK_pos_t;  // index of chunk end pos in packet buffer
-typedef std::queue<pair<CHUNK_pos_t,CHUNK_idx_t>> IDXQ;
+typedef std::queue<pair<CHUNK_idx_t,CHUNK_pos_t>> IDXQ;
 
 typedef std::array<unsigned char,HASH_SIZE> HASH;
 
